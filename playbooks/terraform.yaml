@@ -1,0 +1,48 @@
+---
+- hosts: all
+  become: yes
+  vars:
+    terraform_download_url: https://releases.hashicorp.com/terraform/0.11.10/terraform_0.11.10_linux_amd64.zip
+    
+  pre_tasks:
+    - name: set hostname
+      hostname: name={{ inventory_hostname }}
+
+    - name: install apt packages
+      apt: name="{{ item }}"
+      with_items: 
+        - supervisor
+        - python-dev 
+        - python-setuptools
+        - python 
+        - wget 
+        - unzip
+        - python3
+        - python3-pip 
+        - ipython3 
+        - ipython
+        - ipython3-notebook
+
+    - name: get-pip
+      shell: curl https://bootstrap.pypa.io/get-pip.py | python
+
+    - name: download binaries
+      unarchive: 
+        src: "{{ item }}" 
+        dest: /usr/local/bin
+        remote_src: true
+      with_items:
+        - "{{ terraform_download_url }}"
+
+    - name: install pip
+      shell: curl https://bootstrap.pypa.io/get-pip.py | python3
+      args:
+        creates: /usr/local/bin/pip
+
+    - name: install boto
+      pip: 
+        executable: /usr/local/bin/pip
+        name: boto
+  
+    - name: setup terraformrc
+      template: src=templates/terraformrc.j2 dest=/home/vagrant/.terraformrc
