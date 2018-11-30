@@ -18,3 +18,5 @@ module "ec2_instance" {
   key_name = "tfe-demos-darnold"
   subnet_id = "${element(data.terraform_remote_state.awsdemo_darnold_network.public_subnets, 0)}"
 }
+ 
+ # yup, this counts as a change! :)
