@@ -1,0 +1,121 @@
+#!/usr/bin/env python2.7
+from boto import sts, iam
+import hcl
+import boto
+import os
+import json
+import sys
+from functools import partial
+from tfe import Workspace, Organization
+import subprocess
+
+def get_config(config_file):
+    d = dict()
+    with open(config_file, "r") as config:
+        hcl_config = hcl.loads(config.read())
+    for k, v in hcl_config.items():
+        d[k] = v
+    return d
+
+
+def get_user_name(iam_client):
+    _ = iam_client.get_user()
+    _ = _.get("get_user_response")
+    _ = _.get("get_user_result")
+    _ = _.get("user")
+    _ = _.get("user_name")
+    return _
+
+
+def get_mfa_devices(iam_client):
+    username = get_user_name(iam_client)
+    _ = iam_client.get_all_mfa_devices(username)
+    _ = _.get("list_mfa_devices_response")
+    _ = _.get("list_mfa_devices_result")
+    _ = _.get("mfa_devices")[0]
+    _ = _.get("serial_number")
+    return _
+
+def get_current_workspace():
+    p = subprocess.Popen("terraform workspace list", shell=True, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    for x in out.splitlines():
+        if '*' in str(x): 
+            return str(x).split()[1].rstrip("'")
+    else:
+        return False
+
+def main(opt):
+    # we will conditionally pass variables to aws_client connection function
+    # using functools.partial to build up our function call.
+    sts_client = sts.connect_to_region(opt.region)
+    iam_client = iam.connect_to_region(opt.region)
+
+    session_token = sts_client.get_session_token(
+        mfa_token=opt.mfa_token,
+        mfa_serial_number=get_mfa_devices(iam_client)
+    )
+    session_data = session_token.to_dict()
+    tfe_config = get_config(os.path.expanduser("~/.terraformrc"))
+    backend = get_config(opt.backend)
+    tfe_api = backend.get("terraform").get("backend").get("remote").get("hostname")
+    tfe_token = tfe_config.get("credentials").get(tfe_api).get("token")
+    bs_workspaces = backend.get("terraform").get("backend").get("remote").get("workspaces")
+    org = backend.get("terraform").get("backend").get("remote").get("organization")
+    if bs_workspaces.get("prefix"):
+        ws_name = "{0}{1}".format(
+            bs_workspaces.get("prefix"),
+            get_current_workspace()
+        )
+    else:
+        ws_name = bs_workspaces.get("name")
+
+    print("https://{0}".format(tfe_api))
+    print("{0}:{1}".format(
+            org,
+            ws_name
+        )
+    )
+
+    org = Organization(
+        "https://{0}".format(tfe_api),
+        tfe_token,
+        org,
+        opt.admin)
+
+    ws = Workspace(
+        "https://{0}".format(tfe_api),
+        tfe_token,
+        org.org_name,
+        ws_name
+    )
+    
+    ws.rmvars(
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_DEFAULT_REGION",
+        "AWS_SESSION_TOKEN"
+    )
+    
+    ws.sensitive_env_var(
+       AWS_SESSION_TOKEN=session_data.get("session_token"),
+       AWS_SECRET_ACCESS_KEY=session_data.get("secret_key")
+    )
+
+    ws.env_var(
+        AWS_ACCESS_KEY_ID=session_data.get("access_key"),
+        AWS_DEFAULT_REGION=opt.region
+    )
+    
+
+
+
+if __name__ == '__main__':
+    from optparse import OptionParser
+    parser = OptionParser()
+    parser.add_option("--region")
+    parser.add_option("--mfa", dest="mfa_token")
+    parser.add_option("--backend", default=os.path.join(os.getcwd(), "backend.tf"))
+    parser.add_option("--admin")
+    opt, args = parser.parse_args()
+    main(opt)
