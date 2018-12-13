@@ -3,7 +3,7 @@
 data "terraform_remote_state" "awsdemo_darnold_network" {
   backend = "atlas"
   config {
-    name    = "AWSDemoDarnold/Network"
+    name    = "AWSDemoDarnoldTFE/Network"
   }
 }
 
@@ -14,7 +14,7 @@ module "ec2_instance" {
   version = "2.0.0"
 
   instance_name = "DarnoldDemo"
-  instance_type = "m4.large"
+  instance_type = "m4.xlarge"
   key_name = "tfe-demos-darnold"
   subnet_id = "${element(data.terraform_remote_state.awsdemo_darnold_network.public_subnets, 0)}"
 }

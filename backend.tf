@@ -1,8 +1,7 @@
 terraform {
   backend "remote" {
     hostname = "app.terraform.io"
-    organization = "AWSDemoDarnold"
-
+    organization = "AWSDemoDarnoldTFE"
     workspaces {
       prefix = "ec2-"
     }
